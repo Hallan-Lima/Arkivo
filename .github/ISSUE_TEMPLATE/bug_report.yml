@@ -1,0 +1,34 @@
+name: 🐛 Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. Screenshots help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Click on ...
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: OS, browser, Node version, AI provider (if relevant)

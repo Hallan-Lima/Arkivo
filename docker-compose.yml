@@ -1,0 +1,31 @@
+# Infraestrutura de desenvolvimento do Arkivo.
+# Fase 1 usa apenas o Postgres (com pgvector já disponível para a busca semântica da Fase 2).
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: arkivo
+      POSTGRES_PASSWORD: arkivo
+      POSTGRES_DB: arkivo
+    ports:
+      - "5433:5432"
+    volumes:
+      - arkivo_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arkivo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Converte arquivos do Office (docx, pptx, xlsx, doc, odt, rtf...) em PDF fiel ao original,
+  # para visualizar "exatamente como era" e extrair texto de formatos legados. Opcional.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    command: ["gotenberg", "--api-timeout=120s"]
+
+volumes:
+  arkivo_pg:

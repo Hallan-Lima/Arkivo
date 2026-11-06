@@ -1,0 +1,45 @@
+{
+  "name": "@arkivo/server",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "dev": "nest start --watch -p tsconfig.dev.json",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.97",
+    "@ai-sdk/openai": "^4.0.109",
+    "@ai-sdk/openai-compatible": "^3.0.85",
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/multipart": "^10.1.7",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/jwt": "^11.0.0",
+    "@nestjs/platform-fastify": "^11.1.0",
+    "ai": "^7.0.163",
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^16.5.0",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.2",
+    "kysely": "^0.28.2",
+    "mammoth": "^1.13.0",
+    "marked": "^18.1.3",
+    "nodemailer": "^10.3.1",
+    "pg": "^8.16.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "unpdf": "^2.1.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.7",
+    "@types/node": "^22.15.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.15.0",
+    "typescript": "^5.8.3"
+  }
+}

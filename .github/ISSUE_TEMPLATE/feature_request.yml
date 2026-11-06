@@ -1,0 +1,20 @@
+name: 💡 Feature request
+description: Suggest an idea for Arkivo
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation or pain point, e.g. "Our HR team needs to..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or tools you use today
+      description: Confluence, Fluig, SharePoint, Notion, Docmost, Word files... what do you like or miss there?

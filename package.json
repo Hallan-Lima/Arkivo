@@ -1,0 +1,43 @@
+{
+  "name": "arkivo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Open-source, self-hosted documentation hub for companies: import legacy docs (Word, PDF, PowerPoint), version history, AI chat and change proposals, MCP server.",
+  "license": "AGPL-3.0-only",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "dev": "concurrently -n server,web -c blue,green \"npm run dev -w @arkivo/server\" \"npm run dev -w @arkivo/web\"",
+    "build": "npm run build -w @arkivo/server && npm run build -w @arkivo/web",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "documentation",
+    "knowledge-base",
+    "wiki",
+    "confluence-alternative",
+    "self-hosted",
+    "ai",
+    "mcp",
+    "rag",
+    "document-management",
+    "legacy-import",
+    "tiptap",
+    "nestjs",
+    "react",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/<your-user>/arkivo.git"
+  }
+}
