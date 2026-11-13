@@ -54,7 +54,13 @@ export interface NodesTable {
   updated_by: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
+  ai_usage: Generated<AiUsage>;
+  indexed_at: Timestamp | null;
+  design_id: string | null;
 }
+
+/** auto = entra na busca normalmente; always = fonte de referência (prioridade); never = a IA ignora. */
+export type AiUsage = 'auto' | 'always' | 'never';
 
 export interface NodeVersionsTable {
   id: Generated<string>;
@@ -80,6 +86,9 @@ export interface DB {
   api_tokens: ApiTokensTable;
   change_requests: ChangeRequestsTable;
   files: FilesTable;
+  node_chunks: NodeChunksTable;
+  node_sources: NodeSourcesTable;
+  doc_designs: DocDesignsTable;
 }
 
 export type User = Selectable<UsersTable>;
@@ -150,4 +159,54 @@ export interface FilesTable {
   preview_file_id: string | null;
   created_by: string | null;
   created_at: Timestamp;
+}
+
+// ---- Migração 004 (notebook de IA e designs) ----
+export interface NodeChunksTable {
+  id: Generated<string>;
+  node_id: string;
+  workspace_id: string;
+  idx: number;
+  heading: string | null;
+  content: string;
+  version: number;
+  /** pgvector; gravado via SQL bruto (`'[...]'::vector`). */
+  embedding: string | null;
+  embedding_model: string | null;
+  created_at: Timestamp;
+}
+
+export interface NodeSourcesTable {
+  node_id: string;
+  source_node_id: string;
+  source_version: number;
+  created_at: Timestamp;
+}
+
+export interface DocDesignPalette {
+  primary: string;
+  accent: string;
+  text: string;
+  background: string;
+  heading: string;
+  muted: string;
+}
+
+export interface DocDesignsTable {
+  id: Generated<string>;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  palette: ColumnType<DocDesignPalette, string, string>;
+  font_heading: string;
+  font_body: string;
+  layout: string;
+  header_text: string | null;
+  footer_text: string | null;
+  logo_file_id: string | null;
+  cover_file_id: string | null;
+  guidelines: string | null;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
 }

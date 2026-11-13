@@ -3,17 +3,19 @@ import { Link } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DiffStats, DiffView } from './DiffView';
 import { jsonToMarkdown } from '@/lib/markdown';
-import { Bookmark, Bot, Columns2, Download, FileText, History, Info, ListCollapse as ListDiff, RotateCcw, Sparkles } from 'lucide-react';
+import { AlertTriangle, Bookmark, Bot, Columns2, Download, FileText, History, Info, ListCollapse as ListDiff, RotateCcw, Sparkles, Wand2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { formatBytes, qk, useProposals, useUsers, useVersions } from '@/lib/hooks';
-import { SOURCE_LABEL, STATUS_LABEL, type NodeDetail, type NodeStatus, type VersionDetail } from '@/lib/types';
+import { formatBytes, qk, useDesigns, useProposals, useUsers, useVersions } from '@/lib/hooks';
+import { AI_USAGE_LABEL, SOURCE_LABEL, STATUS_LABEL, type AiUsage, type NodeDetail, type NodeStatus, type VersionDetail } from '@/lib/types';
+import { toScope } from '@/lib/scope';
 import { cn, formatDate, timeAgo } from '@/lib/utils';
 import { Editor } from '@/editor/Editor';
 import { Button, Dialog, Field, Input, Select, Spinner } from './ui';
 import { AiChat } from './AiChat';
+import { Studio } from './Studio';
 import { useLayout } from './AppLayout';
 
-export type PanelTab = 'info' | 'history' | 'ai';
+export type PanelTab = 'info' | 'history' | 'ai' | 'studio';
 
 export function DocSidePanel({
   node,
@@ -70,7 +72,7 @@ export function DocSidePanel({
   }
 
   return (
-    <aside className="relative flex shrink-0 flex-col border-l border-border bg-surface" style={{ width }}>
+    <aside className="no-print relative flex shrink-0 flex-col border-l border-border bg-surface" style={{ width }}>
       <div
         onPointerDown={startResize}
         onDoubleClick={() => setWidth(360)}
@@ -79,11 +81,13 @@ export function DocSidePanel({
       />
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
         <TabBtn active={tab === 'ai'} onClick={() => onTab('ai')} icon={<Sparkles className="size-4" />} label="Chat" />
+        {me.features.ai && <TabBtn active={tab === 'studio'} onClick={() => onTab('studio')} icon={<Wand2 className="size-4" />} label="Estúdio" />}
         <TabBtn active={tab === 'info'} onClick={() => onTab('info')} icon={<Info className="size-4" />} label="Detalhes" />
         <TabBtn active={tab === 'history'} onClick={() => onTab('history')} icon={<History className="size-4" />} label="Histórico" />
       </div>
-      <div className={cn('min-h-0 flex-1', tab === 'ai' ? 'flex flex-col px-3 pb-3 pt-1' : 'overflow-y-auto p-4')}>
-        {tab === 'info' && <InfoTab node={node} canEdit={canEdit} />}
+      <div className={cn('min-h-0 flex-1', tab === 'ai' ? 'flex flex-col px-3 pb-3 pt-1' : tab === 'studio' ? 'flex flex-col p-3' : 'overflow-y-auto p-4')}>
+        {tab === 'info' && <InfoTab node={node} canEdit={canEdit} aiEnabled={me.features.ai} onOpenProposal={onOpenProposal} />}
+        {tab === 'studio' && me.features.ai && <Studio key={node.id} nodeId={node.id} compact storageKey={`arkivo:studio:${node.id}`} />}
         {tab === 'history' && <HistoryTab node={node} canEdit={canEdit} beforeRestore={beforeRestore} onRestored={onRestored} onOpenProposal={onOpenProposal} />}
         {tab === 'ai' &&
           (me.features.ai ? (
@@ -96,8 +100,8 @@ export function DocSidePanel({
               editSuggestions={['Corrija ortografia e gramática', 'Organize em seções com títulos claros', 'Transforme em um procedimento passo a passo']}
               onPropose={
                 canEdit && me.features.aiProposals
-                  ? async (instruction) => {
-                      const p = await api.post<{ id: string; summary: string }>('/ai/propose', { nodeId: node.id, instruction });
+                  ? async (instruction, useSources) => {
+                      const p = await api.post<{ id: string; summary: string }>('/ai/propose', { nodeId: node.id, instruction, useSources, scope: toScope() });
                       qc.invalidateQueries({ queryKey: qk.proposals(node.id) });
                       qc.invalidateQueries({ queryKey: qk.openProposals });
                       return p;
@@ -146,9 +150,30 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
   );
 }
 
-function InfoTab({ node, canEdit }: { node: NodeDetail; canEdit: boolean }) {
+function InfoTab({ node, canEdit, aiEnabled, onOpenProposal }: { node: NodeDetail; canEdit: boolean; aiEnabled: boolean; onOpenProposal: (id: string) => void }) {
   const qc = useQueryClient();
   const { data: users = [] } = useUsers();
+  const { data: designs = [] } = useDesigns();
+  const changedSources = node.derived_from.filter((s) => s.current_version > s.source_version);
+  const updateFromSources = useMutation({
+    mutationFn: () =>
+      api.post<{ id: string }>('/ai/propose', {
+        nodeId: node.id,
+        instruction: 'Atualize este documento conforme as versões atuais dos documentos de origem. Mantenha a estrutura e mude só o que estiver diferente.',
+        useSources: true,
+        scope: toScope(),
+        referenceNodeIds: node.derived_from.map((s) => s.id).slice(0, 10),
+      }),
+    onSuccess: (p) => {
+      qc.invalidateQueries({ queryKey: qk.proposals(node.id) });
+      qc.invalidateQueries({ queryKey: qk.openProposals });
+      onOpenProposal(p.id);
+    },
+  });
+  const refreshSources = useMutation({
+    mutationFn: () => api.post(`/nodes/${node.id}/sources/refresh`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.node(node.id) }),
+  });
   const update = useMutation({
     mutationFn: (patch: Record<string, unknown>) => api.patch(`/nodes/${node.id}`, patch),
     onSuccess: () => {
@@ -188,6 +213,63 @@ function InfoTab({ node, canEdit }: { node: NodeDetail; canEdit: boolean }) {
           onChange={(e) => update.mutate({ reviewDueAt: e.target.value ? new Date(`${e.target.value}T12:00:00`).toISOString() : null })}
         />
       </Field>
+      {aiEnabled && (
+        <Field label="Uso pela IA" hint="Referência: a IA prioriza este documento. Nunca: ele não entra em respostas, no Estúdio nem nas verificações.">
+          <Select disabled={!canEdit} value={node.ai_usage} onChange={(e) => update.mutate({ aiUsage: e.target.value as AiUsage })}>
+            {Object.entries(AI_USAGE_LABEL).map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+      <Field label="Design" hint="Paleta, fontes e layout aplicados ao documento (e na impressão/PDF).">
+        <Select disabled={!canEdit} value={node.design_id ?? ''} onChange={(e) => update.mutate({ designId: e.target.value || null })}>
+          <option value="">— Padrão do Arkivo —</option>
+          {designs.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {node.derived_from.length > 0 && (
+        <div className="border-t border-border pt-4">
+          <div className="mb-2 text-sm font-medium">Gerado a partir de</div>
+          {changedSources.length > 0 && (
+            <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              {changedSources.length === 1 ? 'Uma fonte mudou' : `${changedSources.length} fontes mudaram`} depois que este documento foi criado.
+            </div>
+          )}
+          <div className="space-y-1">
+            {node.derived_from.map((s) => (
+              <Link key={s.id} to={`/s/${s.space_slug}/p/${s.id}`} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
+                <FileText className="size-3.5 shrink-0 text-fg-subtle" />
+                <span className="min-w-0 flex-1 truncate">{s.title || 'Sem título'}</span>
+                <span className={cn('shrink-0 text-xs', s.current_version > s.source_version ? 'font-medium text-amber-600' : 'text-fg-subtle')}>
+                  v{s.source_version}
+                  {s.current_version > s.source_version && ` → v${s.current_version}`}
+                </span>
+              </Link>
+            ))}
+          </div>
+          {canEdit && changedSources.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {aiEnabled && (
+                <Button size="sm" loading={updateFromSources.isPending} onClick={() => updateFromSources.mutate()}>
+                  <Wand2 className="size-3.5" /> Atualizar com as fontes
+                </Button>
+              )}
+              <Button size="sm" variant="secondary" loading={refreshSources.isPending} onClick={() => refreshSources.mutate()}>
+                Já está ok
+              </Button>
+            </div>
+          )}
+          {updateFromSources.error && <p className="mt-1 text-xs text-red-600">{(updateFromSources.error as Error).message}</p>}
+        </div>
+      )}
       <dl className="space-y-2 border-t border-border pt-4 text-sm">
         <Row k="Criado em" v={formatDate(node.created_at)} />
         <Row k="Atualizado" v={`${timeAgo(node.updated_at)}${node.updated_by_name ? ` por ${node.updated_by_name}` : ''}`} />

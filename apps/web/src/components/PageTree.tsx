@@ -1,10 +1,12 @@
 import { useState, type DragEvent } from 'react';
 import { NavLink, useNavigate, useParams } from 'react-router';
 import * as DM from '@radix-ui/react-dropdown-menu';
-import { ChevronRight, FileText, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, EyeOff, FileText, MoreHorizontal, Plus, Star, Target, Trash2 } from 'lucide-react';
 import { buildTree, cn, untitled } from '@/lib/utils';
-import { useCreateNode, useDeleteNode, useMoveNode, useTree } from '@/lib/hooks';
+import { useCreateNode, useDeleteNode, useMoveNode, useSpaces, useTree } from '@/lib/hooks';
 import type { Space, TreeItem, TreeNode } from '@/lib/types';
+import { isIncluded, isPartial, scopeActions, useScopeState } from '@/lib/scope';
+import { SourceCheckbox } from './SourceCheckbox';
 
 type DropZone = 'before' | 'inside' | 'after';
 
@@ -78,13 +80,14 @@ export function PageTree({ space, canEdit }: { space: Space; canEdit: boolean })
   return (
     <div role="tree">
       {tree.map((n) => (
-        <TreeRow key={n.id} node={n} depth={0} space={space} canEdit={canEdit} expanded={expanded} toggle={toggle} drag={drag} setDrag={setDrag} onDrop={drop} />
+        <TreeRow key={n.id} items={items} node={n} depth={0} space={space} canEdit={canEdit} expanded={expanded} toggle={toggle} drag={drag} setDrag={setDrag} onDrop={drop} />
       ))}
     </div>
   );
 }
 
 interface RowProps {
+  items: TreeItem[];
   node: TreeNode;
   depth: number;
   space: Space;
@@ -96,7 +99,12 @@ interface RowProps {
   onDrop: (target: TreeItem, zone: DropZone) => void;
 }
 
-function TreeRow({ node, depth, space, canEdit, expanded, toggle, drag, setDrag, onDrop }: RowProps) {
+function TreeRow({ items, node, depth, space, canEdit, expanded, toggle, drag, setDrag, onDrop }: RowProps) {
+  const scope = useScopeState();
+  const { data: spaces = [] } = useSpaces();
+  const blocked = node.ai_usage === 'never';
+  const included = !blocked && isIncluded(scope, items, node.id, space.id);
+  const partial = !blocked && isPartial(scope, items, node.id, space.id);
   const nav = useNavigate();
   const { nodeId } = useParams();
   const create = useCreateNode();
@@ -156,6 +164,17 @@ function TreeRow({ node, depth, space, canEdit, expanded, toggle, drag, setDrag,
       >
         {zone === 'before' && <div className="absolute inset-x-2 top-0 h-0.5 rounded bg-accent" />}
         {zone === 'after' && <div className="absolute inset-x-2 bottom-0 h-0.5 rounded bg-accent" />}
+        {scope.picking && (
+          <span className="mr-1 grid size-5 shrink-0 place-items-center">
+            <SourceCheckbox
+              checked={included}
+              partial={partial}
+              disabled={blocked}
+              onChange={() => scopeActions.toggleNode(items, node.id, space.id)}
+              title={blocked ? 'Marcado como "Nunca usar na IA" (mude em Detalhes)' : included ? 'Usado como fonte da IA' : 'Fora das fontes da IA'}
+            />
+          </span>
+        )}
         <button
           onClick={() => toggle(node.id)}
           className={cn('grid size-5 shrink-0 place-items-center rounded text-fg-subtle hover:bg-border', !hasChildren && 'invisible')}
@@ -173,7 +192,9 @@ function TreeRow({ node, depth, space, canEdit, expanded, toggle, drag, setDrag,
           }
         >
           {node.icon ? <span className="text-sm leading-none">{node.icon}</span> : <FileText className="size-3.5 shrink-0 text-fg-subtle" />}
-          <span className="truncate">{untitled(node.title)}</span>
+          <span className={cn('truncate', scope.picking && !included && 'opacity-50')}>{untitled(node.title)}</span>
+          {node.ai_usage === 'always' && <Star className="size-3 shrink-0 fill-amber-400 text-amber-500" aria-label="Fonte de referência da IA" />}
+          {blocked && <EyeOff className="size-3 shrink-0 text-fg-subtle" aria-label="A IA não usa este documento" />}
         </NavLink>
         {canEdit && (
           <div className="flex shrink-0 items-center opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100">
@@ -183,6 +204,17 @@ function TreeRow({ node, depth, space, canEdit, expanded, toggle, drag, setDrag,
               </DM.Trigger>
               <DM.Portal>
                 <DM.Content align="start" className="z-50 min-w-40 rounded-lg border border-border bg-bg p-1 text-sm shadow-lg">
+                  {!blocked && (
+                    <DM.Item
+                      onSelect={() => {
+                        scopeActions.only(spaces.map((s) => s.id), node.id, space.id);
+                        scopeActions.setPicking(true);
+                      }}
+                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none data-[highlighted]:bg-muted"
+                    >
+                      <Target className="size-3.5" /> Usar só esta como fonte da IA
+                    </DM.Item>
+                  )}
                   <DM.Item onSelect={remove} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-red-600 outline-none data-[highlighted]:bg-muted">
                     <Trash2 className="size-3.5" /> Excluir
                   </DM.Item>
@@ -197,7 +229,7 @@ function TreeRow({ node, depth, space, canEdit, expanded, toggle, drag, setDrag,
       </div>
       {isOpen &&
         node.children.map((c) => (
-          <TreeRow key={c.id} node={c} depth={depth + 1} space={space} canEdit={canEdit} expanded={expanded} toggle={toggle} drag={drag} setDrag={setDrag} onDrop={onDrop} />
+          <TreeRow key={c.id} items={items} node={c} depth={depth + 1} space={space} canEdit={canEdit} expanded={expanded} toggle={toggle} drag={drag} setDrag={setDrag} onDrop={onDrop} />
         ))}
     </div>
   );

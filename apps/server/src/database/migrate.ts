@@ -3,12 +3,14 @@ import { createDb } from './db';
 import * as m001 from './migrations/001_init';
 import * as m002 from './migrations/002_platform';
 import * as m003 from './migrations/003_file_previews';
+import * as m004 from './migrations/004_notebook';
 
 // Migrações registradas explicitamente (funciona igual em dev e no build).
 const migrations: Record<string, Migration> = {
   '001_init': m001,
   '002_platform': m002,
   '003_file_previews': m003,
+  '004_notebook': m004,
 };
 
 class StaticProvider implements MigrationProvider {

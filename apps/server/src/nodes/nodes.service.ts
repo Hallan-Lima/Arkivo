@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectDb } from '../database/database.module';
-import type { DB, NodeStatus, NodeType } from '../database/types';
+import type { AiUsage, DB, NodeStatus, NodeType } from '../database/types';
 import type { AuthUser } from '../auth/public.decorator';
 import { extractText } from './text-content';
 import { SettingsService } from '../settings/settings.service';
@@ -16,6 +16,8 @@ export interface UpdateNodeInput {
   status?: NodeStatus;
   ownerId?: string | null;
   reviewDueAt?: string | null;
+  aiUsage?: AiUsage;
+  designId?: string | null;
 }
 
 @Injectable()
@@ -30,7 +32,7 @@ export class NodesService {
     await this.assertSpace(user, spaceId);
     return this.db
       .selectFrom('nodes')
-      .select(['id', 'parent_id', 'type', 'title', 'icon', 'position', 'status'])
+      .select(['id', 'parent_id', 'type', 'title', 'icon', 'position', 'status', 'ai_usage'])
       .where('space_id', '=', spaceId)
       .orderBy('position')
       .orderBy('created_at')
@@ -54,6 +56,8 @@ export class NodesService {
         'nodes.status',
         'nodes.owner_id',
         'nodes.review_due_at',
+        'nodes.ai_usage',
+        'nodes.design_id',
         'nodes.created_at',
         'nodes.updated_at',
         'spaces.slug as space_slug',
@@ -83,12 +87,34 @@ export class NodesService {
       .where('kind', 'not in', ['image', 'preview'])
       .orderBy('created_at')
       .execute();
-    return { ...node, files };
+    // De quais documentos este foi gerado (notebook/Estúdio) e se essas fontes mudaram depois.
+    const derived_from = await this.db
+      .selectFrom('node_sources')
+      .innerJoin('nodes as src', 'src.id', 'node_sources.source_node_id')
+      .innerJoin('spaces as ss', 'ss.id', 'src.space_id')
+      .select(['src.id', 'src.title', 'ss.slug as space_slug', 'node_sources.source_version'])
+      .select((eb) =>
+        eb.selectFrom('node_versions').whereRef('node_versions.node_id', '=', 'src.id').select(sql<number>`coalesce(max(version), 0)::int`.as('v')).as('current_version'),
+      )
+      .where('node_sources.node_id', '=', id)
+      .execute();
+    return { ...node, files, derived_from };
   }
 
   async create(
     user: AuthUser,
-    input: { spaceId: string; parentId?: string | null; title?: string; type?: NodeType; content?: unknown; status?: NodeStatus; sourceFileId?: string },
+    input: {
+      spaceId: string;
+      parentId?: string | null;
+      title?: string;
+      type?: NodeType;
+      content?: unknown;
+      status?: NodeStatus;
+      sourceFileId?: string;
+      designId?: string | null;
+      /** Documentos usados como fonte (Estúdio do notebook). */
+      derivedFrom?: string[];
+    },
   ) {
     await this.assertSpace(user, input.spaceId);
     if (input.parentId) {
@@ -116,6 +142,7 @@ export class NodesService {
           content: JSON.stringify(doc),
           text_content: extractText(doc),
           ...(input.status ? { status: input.status } : {}),
+          design_id: input.designId ? await this.assertDesign(user, input.designId) : null,
           position: Number(max) + 1,
           owner_id: user.id,
           review_due_at: defaultReviewDays > 0 ? new Date(Date.now() + defaultReviewDays * 86400_000) : null,
@@ -133,7 +160,11 @@ export class NodesService {
           .where('workspace_id', '=', user.workspaceId)
           .execute();
       }
-      await this.snapshot(trx, node.id, user.id, { force: true, message: input.sourceFileId ? 'Importado' : 'Criado' });
+      if (input.derivedFrom?.length) await this.recordSources(trx, user, node.id, input.derivedFrom);
+      await this.snapshot(trx, node.id, user.id, {
+        force: true,
+        message: input.sourceFileId ? 'Importado' : input.derivedFrom?.length ? 'Gerado pelo notebook de IA' : 'Criado',
+      });
       return node;
     });
   }
@@ -147,6 +178,8 @@ export class NodesService {
       if (input.status !== undefined) patch.status = input.status;
       if (input.ownerId !== undefined) patch.owner_id = input.ownerId;
       if (input.reviewDueAt !== undefined) patch.review_due_at = input.reviewDueAt;
+      if (input.aiUsage !== undefined) patch.ai_usage = input.aiUsage;
+      if (input.designId !== undefined) patch.design_id = input.designId ? await this.assertDesign(user, input.designId) : null;
       if (input.content !== undefined) {
         patch.content = JSON.stringify(input.content);
         patch.text_content = extractText(input.content);
@@ -302,6 +335,38 @@ export class NodesService {
       .values({ node_id: nodeId, version, ...values, message: opts.message ?? null, created_by: userId })
       .execute();
     return { version };
+  }
+
+  /** Registra as fontes (e as versões atuais delas) de um documento gerado a partir de outros. */
+  private async recordSources(trx: Transaction<DB>, user: AuthUser, nodeId: string, sourceIds: string[]) {
+    const rows = await trx
+      .selectFrom('nodes')
+      .innerJoin('spaces', 'spaces.id', 'nodes.space_id')
+      .select('nodes.id')
+      .select((eb) =>
+        eb.selectFrom('node_versions').whereRef('node_versions.node_id', '=', 'nodes.id').select(sql<number>`coalesce(max(version), 0)::int`.as('v')).as('version'),
+      )
+      .where('nodes.id', 'in', [...new Set(sourceIds)].slice(0, 100))
+      .where('spaces.workspace_id', '=', user.workspaceId)
+      .execute();
+    const values = rows.filter((r) => r.id !== nodeId).map((r) => ({ node_id: nodeId, source_node_id: r.id, source_version: Number(r.version ?? 0) }));
+    if (values.length) await trx.insertInto('node_sources').values(values).onConflict((oc) => oc.doNothing()).execute();
+  }
+
+  /** Marca as fontes como "conferidas" na versão atual (depois de atualizar o documento derivado). */
+  async refreshSources(user: AuthUser, id: string) {
+    await this.assertNode(user, id);
+    await sql`
+      UPDATE node_sources ns SET source_version = (SELECT coalesce(max(v.version), 0) FROM node_versions v WHERE v.node_id = ns.source_node_id)
+      WHERE ns.node_id = ${id}
+    `.execute(this.db);
+    return { ok: true };
+  }
+
+  private async assertDesign(user: AuthUser, designId: string) {
+    const d = await this.db.selectFrom('doc_designs').select('id').where('id', '=', designId).where('workspace_id', '=', user.workspaceId).executeTakeFirst();
+    if (!d) throw new BadRequestException('Design não encontrado');
+    return d.id;
   }
 
   // ---------- Escopo ----------

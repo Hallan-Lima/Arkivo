@@ -13,6 +13,8 @@ const createSchema = z.object({
   content: z.record(z.unknown()).optional(),
   status: z.enum(['draft', 'in_review', 'published', 'outdated']).optional(),
   sourceFileId: z.string().uuid().optional(),
+  designId: z.string().uuid().nullish(),
+  derivedFrom: z.array(z.string().uuid()).max(100).optional(),
 });
 const updateSchema = z.object({
   title: z.string().max(300).optional(),
@@ -21,6 +23,8 @@ const updateSchema = z.object({
   status: z.enum(['draft', 'in_review', 'published', 'outdated']).optional(),
   ownerId: z.string().uuid().nullish(),
   reviewDueAt: z.string().datetime({ offset: true }).nullish(),
+  aiUsage: z.enum(['auto', 'always', 'never']).optional(),
+  designId: z.string().uuid().nullish(),
 });
 const moveSchema = z.object({ parentId: z.string().uuid().nullable(), position: z.number().finite() });
 const checkpointSchema = z.object({ message: z.string().trim().min(1).max(200) });
@@ -66,6 +70,12 @@ export class NodesController {
   @MinRole('editor')
   remove(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.nodes.remove(user, id);
+  }
+
+  @Post('nodes/:id/sources/refresh')
+  @MinRole('editor')
+  refreshSources(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.nodes.refreshSources(user, id);
   }
 
   @Get('nodes/:id/versions')

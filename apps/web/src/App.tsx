@@ -14,6 +14,7 @@ import { AccountPage } from './pages/AccountPage';
 import { ImportPage } from './pages/ImportPage';
 import { AssistantPage } from './pages/AssistantPage';
 import { ReviewsPage } from './pages/ReviewsPage';
+import { DesignsPage } from './pages/DesignsPage';
 import { AdminLayout } from './pages/admin/AdminLayout';
 import { GeneralSettings } from './pages/admin/GeneralSettings';
 import { UsersAdmin } from './pages/admin/UsersAdmin';
@@ -54,6 +55,7 @@ export function App() {
         <Route path="import" element={<ImportPage />} />
         <Route path="assistant" element={<AssistantPage />} />
         <Route path="reviews" element={<ReviewsPage />} />
+        <Route path="designs" element={<DesignsPage />} />
         <Route path="admin" element={<AdminLayout />}>
           <Route index element={<Navigate to="users" replace />} />
           <Route path="general" element={<GeneralSettings />} />

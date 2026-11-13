@@ -12,6 +12,8 @@ import { ChangeRequestsModule } from './change-requests/change-requests.module';
 import { AiModule } from './ai/ai.module';
 import { FilesModule } from './files/files.module';
 import { McpModule } from './mcp/mcp.module';
+import { NotebookModule } from './notebook/notebook.module';
+import { DesignsModule } from './designs/designs.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -27,6 +29,8 @@ import { HealthController } from './health.controller';
     AiModule,
     FilesModule,
     McpModule,
+    NotebookModule,
+    DesignsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],

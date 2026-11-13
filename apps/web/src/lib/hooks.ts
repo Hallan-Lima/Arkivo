@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
-import type { Me, NodeDetail, OpenProposal, ProposalRow, Space, TreeItem, UserRow, VersionRow } from './types';
+import type { Design, Me, NodeDetail, OpenProposal, ProposalRow, Space, TreeItem, UserRow, VersionRow } from './types';
 
 export const qk = {
   me: ['me'] as const,
@@ -12,6 +12,8 @@ export const qk = {
   proposals: (id: string) => ['proposals', id] as const,
   openProposals: ['open-proposals'] as const,
   users: ['users'] as const,
+  designs: ['designs'] as const,
+  notebookStatus: ['notebook-status'] as const,
 };
 
 export const useMe = () => useQuery({ queryKey: qk.me, queryFn: () => api.get<Me>('/auth/me'), retry: false });
@@ -31,12 +33,13 @@ export const useProposals = (id: string) =>
   useQuery({ queryKey: qk.proposals(id), queryFn: () => api.get<ProposalRow[]>(`/nodes/${id}/change-requests`) });
 export const useOpenProposals = () =>
   useQuery({ queryKey: qk.openProposals, queryFn: () => api.get<OpenProposal[]>('/change-requests'), refetchInterval: 60_000 });
+export const useDesigns = () => useQuery({ queryKey: qk.designs, queryFn: () => api.get<Design[]>('/designs') });
 export const useUsers = () => useQuery({ queryKey: qk.users, queryFn: () => api.get<UserRow[]>('/users') });
 
 export function useCreateNode() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { spaceId: string; parentId?: string | null; title?: string; content?: unknown; status?: string; sourceFileId?: string }) =>
+    mutationFn: (input: { spaceId: string; parentId?: string | null; title?: string; content?: unknown; status?: string; sourceFileId?: string; designId?: string | null; derivedFrom?: string[] }) =>
       api.post<TreeItem>('/nodes', input),
     onSuccess: (_, v) => {
       qc.invalidateQueries({ queryKey: qk.tree(v.spaceId) });

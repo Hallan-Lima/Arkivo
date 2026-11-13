@@ -236,3 +236,132 @@ mark {
 .diff-filler {
   background: repeating-linear-gradient(-45deg, transparent 0 5px, color-mix(in srgb, var(--fg-subtle) 18%, transparent) 5px 6px);
 }
+
+/* ---------- Notebook: citações ---------- */
+.cite-chip {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.25rem;
+  margin: 0 0.1rem;
+  border-radius: 0.3rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 0.15em;
+  cursor: pointer;
+}
+.cite-chip:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+/* Trecho citado, destacado ao abrir o documento a partir de uma citação. */
+.cite-flash {
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, #facc15 35%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, #facc15 35%, transparent);
+  transition: background 1.2s ease, box-shadow 1.2s ease;
+}
+
+/* ---------- Designs de documento ---------- */
+.doc-design {
+  --d-primary: #4f46e5;
+  --d-accent: #0ea5e9;
+  --d-text: #18181b;
+  --d-bg: #ffffff;
+  --d-heading: #111827;
+  --d-muted: #6b7280;
+  color: var(--d-text);
+  font-family: var(--d-font-body);
+}
+.doc-design .doc-design-paper {
+  background: var(--d-bg);
+  color: var(--d-text);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08), 0 8px 30px rgb(0 0 0 / 0.06);
+}
+.doc-design .doc-title,
+.doc-design .ProseMirror h1,
+.doc-design .ProseMirror h2,
+.doc-design .ProseMirror h3,
+.doc-design .ProseMirror h4 {
+  color: var(--d-heading);
+  font-family: var(--d-font-heading);
+}
+.doc-design .ProseMirror,
+.doc-design .ProseMirror p,
+.doc-design .ProseMirror li {
+  color: var(--d-text);
+  font-family: var(--d-font-body);
+}
+.doc-design .ProseMirror a {
+  color: var(--d-primary);
+}
+.doc-design .ProseMirror h2 {
+  border-bottom: 2px solid color-mix(in srgb, var(--d-primary) 25%, transparent);
+  padding-bottom: 0.25rem;
+}
+.doc-design .ProseMirror blockquote {
+  border-left-color: var(--d-accent);
+  color: var(--d-muted);
+}
+.doc-design .ProseMirror th {
+  background: color-mix(in srgb, var(--d-primary) 12%, var(--d-bg));
+  color: var(--d-heading);
+}
+.doc-design .ProseMirror hr {
+  border-color: color-mix(in srgb, var(--d-primary) 30%, transparent);
+}
+.doc-design .ProseMirror code {
+  color: var(--d-primary);
+}
+.doc-design-meta {
+  color: var(--d-muted);
+}
+.doc-design.layout-compact .ProseMirror {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.doc-design.layout-report .ProseMirror {
+  counter-reset: h2;
+}
+.doc-design.layout-report .ProseMirror h2 {
+  counter-increment: h2;
+  counter-reset: h3;
+}
+.doc-design.layout-report .ProseMirror h2::before {
+  content: counter(h2) '. ';
+  color: var(--d-primary);
+}
+.doc-design.layout-report .ProseMirror h3 {
+  counter-increment: h3;
+}
+.doc-design.layout-report .ProseMirror h3::before {
+  content: counter(h2) '.' counter(h3) ' ';
+  color: var(--d-primary);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  html,
+  body,
+  #root {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  main,
+  .print-scroll {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .doc-design .doc-design-paper {
+    box-shadow: none;
+    border-radius: 0;
+  }
+}

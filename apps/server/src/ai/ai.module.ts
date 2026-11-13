@@ -1,12 +1,11 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Logger, Module, Post, Put, Res } from '@nestjs/common';
-import type { FastifyReply } from 'fastify';
+import { BadRequestException, Body, Controller, Get, HttpCode, Module, Post, Put } from '@nestjs/common';
 import { z } from 'zod';
 import { ZodPipe } from '../common/zod.pipe';
 import { AuthUser, CurrentUser, MinRole } from '../auth/public.decorator';
 import { SettingsService } from '../settings/settings.service';
-import { ChangeRequestsService } from '../change-requests/change-requests.service';
 import { ChangeRequestsModule } from '../change-requests/change-requests.module';
 import { AiService } from './ai.service';
+import { buildEmbeddingModel, embedTexts } from '../notebook/embeddings';
 
 const providerSchema = z.enum(['openai', 'anthropic', 'openai-compatible', 'ollama']);
 const aiSettingsSchema = z.object({
@@ -18,28 +17,19 @@ const aiSettingsSchema = z.object({
   apiKey: z.string().max(1000).nullish(),
   instructions: z.string().max(4000),
   allowProposals: z.boolean(),
-});
-
-const chatSchema = z.object({
-  nodeId: z.string().uuid().nullish(),
-  messages: z
-    .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(20000) }))
-    .min(1)
-    .max(40),
-});
-
-const proposeSchema = z.object({
-  nodeId: z.string().uuid(),
-  instruction: z.string().trim().min(3).max(2000),
+  embedProvider: z.enum(['none', 'openai', 'ollama', 'openai-compatible']).default('none'),
+  embedModel: z.string().trim().max(200).default(''),
+  embedBaseUrl: z.string().trim().max(500).default(''),
+  /** undefined = manter a chave salva; '' ou null = remover. */
+  embedApiKey: z.string().max(1000).nullish(),
+  retrievalChunks: z.number().int().min(3).max(30).default(10),
 });
 
 @Controller()
 export class AiController {
-  private readonly log = new Logger('AI');
   constructor(
     private readonly ai: AiService,
     private readonly settings: SettingsService,
-    private readonly changeRequests: ChangeRequestsService,
   ) {}
 
   @Get('admin/settings/ai')
@@ -52,8 +42,15 @@ export class AiController {
   @MinRole('admin')
   async setSettings(@CurrentUser() user: AuthUser, @Body(new ZodPipe(aiSettingsSchema)) body: z.infer<typeof aiSettingsSchema>) {
     if (body.enabled && !body.model) throw new BadRequestException('Informe o modelo para habilitar a IA');
+    const embedChanged = await this.embeddingChanged(user.workspaceId, body);
     await this.settings.setAi(user.workspaceId, body);
-    return { ok: true };
+    return { ok: true, reindex: embedChanged };
+  }
+
+  /** Trocar o modelo de embeddings não apaga nada: o indexador recalcula os vetores aos poucos. */
+  private async embeddingChanged(workspaceId: string, body: z.infer<typeof aiSettingsSchema>) {
+    const cur = await this.settings.getAi(workspaceId);
+    return cur.embedProvider !== body.embedProvider || cur.embedModel !== body.embedModel;
   }
 
   /** Testa a configuração do formulário (sem salvar). Sem `apiKey`, usa a chave já salva. */
@@ -69,38 +66,26 @@ export class AiController {
     }
   }
 
-  @Post('ai/chat')
-  async chat(@CurrentUser() user: AuthUser, @Body(new ZodPipe(chatSchema)) body: z.infer<typeof chatSchema>, @Res() res: FastifyReply) {
-    const { stream, sources } = await this.ai.chat(user.workspaceId, body.messages, body.nodeId ?? undefined);
-    res.raw.writeHead(200, {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': 'no-cache',
-      'X-Accel-Buffering': 'no',
-      'X-Arkivo-Sources': encodeURIComponent(JSON.stringify(sources)),
-    });
-    try {
-      for await (const chunk of stream) res.raw.write(chunk);
-    } catch (e) {
-      this.log.warn(`Erro no chat: ${(e as Error).message}`);
-      res.raw.write(`\n\n> ⚠️ Erro ao falar com o provedor de IA: ${(e as Error).message}`);
-    }
-    res.raw.end();
-  }
-
-  @Post('ai/propose')
-  @MinRole('editor')
+  /** Testa o modelo de embeddings do formulário (sem salvar). */
+  @Post('admin/settings/ai/test-embeddings')
+  @MinRole('admin')
   @HttpCode(200)
-  async propose(@CurrentUser() user: AuthUser, @Body(new ZodPipe(proposeSchema)) body: z.infer<typeof proposeSchema>) {
-    const result = await this.ai.propose(user.workspaceId, body.nodeId, body.instruction);
-    return this.changeRequests.create(user.workspaceId, {
-      nodeId: body.nodeId,
-      summary: result.summary,
-      instruction: body.instruction,
-      markdown: result.markdown,
-      source: 'ai',
-      authorId: user.id,
-      authorLabel: `IA (a pedido de ${user.name})`,
+  async testEmbeddings(@CurrentUser() user: AuthUser, @Body(new ZodPipe(aiSettingsSchema)) body: z.infer<typeof aiSettingsSchema>) {
+    const saved = await this.settings.getAi(user.workspaceId);
+    const em = buildEmbeddingModel({
+      ...body,
+      enabled: true,
+      apiKey: body.apiKey === undefined ? saved.apiKey : (body.apiKey ?? ''),
+      embedApiKey: body.embedApiKey === undefined ? saved.embedApiKey : (body.embedApiKey ?? ''),
     });
+    if (!em) return { ok: false, error: 'Escolha um provedor e um modelo de embeddings (no compatível com OpenAI, informe também a URL).' };
+    const started = Date.now();
+    try {
+      const [vec] = await embedTexts(em.model, ['teste de conexão do Arkivo']);
+      return { ok: true, dimensions: vec.length, ms: Date.now() - started };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message?.slice(0, 500) ?? 'Falha ao conectar' };
+    }
   }
 }
 

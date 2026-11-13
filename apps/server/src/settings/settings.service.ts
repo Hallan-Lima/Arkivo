@@ -15,7 +15,16 @@ export interface AiSettings {
   /** Instruções extras da empresa (tom, idioma, padrões). */
   instructions: string;
   allowProposals: boolean;
+  /** Embeddings para a busca semântica do notebook. 'none' = só busca por palavras. */
+  embedProvider: EmbedProvider;
+  embedModel: string;
+  embedBaseUrl: string;
+  embedApiKeyEnc?: string;
+  /** Quantos trechos entram como contexto em cada resposta. */
+  retrievalChunks: number;
 }
+
+export type EmbedProvider = 'none' | 'openai' | 'ollama' | 'openai-compatible';
 
 export interface SmtpSettings {
   enabled: boolean;
@@ -33,7 +42,7 @@ export interface GeneralSettings {
 }
 
 const DEFAULTS = {
-  ai: { enabled: false, provider: 'openai', baseUrl: '', model: '', instructions: '', allowProposals: true } as AiSettings,
+  ai: { enabled: false, provider: 'openai', baseUrl: '', model: '', instructions: '', allowProposals: true, embedProvider: 'none', embedModel: '', embedBaseUrl: '', retrievalChunks: 10 } as AiSettings,
   smtp: { enabled: false, host: '', port: 587, secure: false, user: '', from: '' } as SmtpSettings,
   general: { publicUrl: process.env.PUBLIC_URL ?? 'http://localhost:5173', defaultReviewDays: 180 } as GeneralSettings,
 };
@@ -61,20 +70,21 @@ export class SettingsService {
   // ---- IA ----
   async getAi(workspaceId: string) {
     const s = await this.get(workspaceId, 'ai');
-    return { ...s, apiKey: decryptSecret(s.apiKeyEnc) };
+    return { ...s, apiKey: decryptSecret(s.apiKeyEnc), embedApiKey: decryptSecret(s.embedApiKeyEnc) };
   }
 
   /** Versão segura para enviar ao navegador (nunca devolve a chave). */
   async getAiPublic(workspaceId: string) {
-    const { apiKeyEnc, ...rest } = await this.get(workspaceId, 'ai');
-    return { ...rest, hasApiKey: !!apiKeyEnc };
+    const { apiKeyEnc, embedApiKeyEnc, ...rest } = await this.get(workspaceId, 'ai');
+    return { ...rest, hasApiKey: !!apiKeyEnc, hasEmbedApiKey: !!embedApiKeyEnc };
   }
 
-  async setAi(workspaceId: string, input: Omit<AiSettings, 'apiKeyEnc'> & { apiKey?: string | null }) {
+  async setAi(workspaceId: string, input: Omit<AiSettings, 'apiKeyEnc' | 'embedApiKeyEnc'> & { apiKey?: string | null; embedApiKey?: string | null }) {
     const current = await this.get(workspaceId, 'ai');
-    const { apiKey, ...rest } = input;
+    const { apiKey, embedApiKey, ...rest } = input;
     const apiKeyEnc = apiKey === undefined ? current.apiKeyEnc : apiKey ? encryptSecret(apiKey) : undefined;
-    await this.set(workspaceId, 'ai', { ...rest, apiKeyEnc });
+    const embedApiKeyEnc = embedApiKey === undefined ? current.embedApiKeyEnc : embedApiKey ? encryptSecret(embedApiKey) : undefined;
+    await this.set(workspaceId, 'ai', { ...rest, apiKeyEnc, embedApiKeyEnc });
   }
 
   // ---- SMTP ----

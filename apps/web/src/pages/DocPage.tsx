@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Check, ChevronRight, CloudOff, FileSearch, FileText, GitPullRequestArrow, Loader2, PanelRight, Sparkles } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, CloudOff, FileSearch, FileText, GitPullRequestArrow, Loader2, PanelRight, Printer, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
-import { qk, useNode, useTree } from '@/lib/hooks';
-import type { NodeDetail, TreeItem } from '@/lib/types';
+import { qk, useDesigns, useNode, useTree } from '@/lib/hooks';
+import type { Design, NodeDetail, TreeItem } from '@/lib/types';
+import { designStyle, fileUrl, layoutWidth } from '@/lib/design';
 import { ancestors, cn, timeAgo, untitled } from '@/lib/utils';
 import { Editor } from '@/editor/Editor';
 import { Spinner, StatusBadge } from '@/components/ui';
@@ -38,8 +39,39 @@ export function DocPage() {
 
 function DocView({ node, onReload }: { node: NodeDetail; onReload: () => Promise<void> }) {
   const { canEdit } = useLayout();
+  const [params, setParams] = useSearchParams();
   const [panelTab, setPanelTab] = useState<PanelTab>('info');
-  const [proposalId, setProposalId] = useState<string | null>(null);
+  const [proposalId, setProposalId] = useState<string | null>(() => params.get('proposal'));
+  const { data: designs = [] } = useDesigns();
+  const design = designs.find((d) => d.id === node.design_id) ?? null;
+
+  // Vindo de uma citação da IA (?hl=trecho): rola até o trecho e destaca.
+  const hl = params.get('hl');
+  useEffect(() => {
+    if (!hl && !params.get('proposal')) return;
+    let tries = 0;
+    let t: ReturnType<typeof setTimeout>;
+    // O editor e o painel ainda estão montando: tenta por alguns segundos até achar o trecho.
+    const attempt = () => {
+      const found = !hl || flashSnippet(hl);
+      if (!found && ++tries < 25) {
+        t = setTimeout(attempt, 200);
+        return;
+      }
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('hl');
+          next.delete('proposal');
+          return next;
+        },
+        { replace: true },
+      );
+    };
+    t = setTimeout(attempt, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hl]);
   const { data: proposals = [] } = useProposals(node.id);
   const openProposals = proposals.filter((p) => p.status === 'open');
   const qc = useQueryClient();
@@ -139,9 +171,9 @@ function DocView({ node, onReload }: { node: NodeDetail; onReload: () => Promise
   const overdue = node.review_due_at && new Date(node.review_due_at) < new Date();
 
   return (
-    <div className="flex h-full">
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        <header className="sticky top-0 z-10 flex h-12 items-center gap-3 border-b border-transparent bg-bg/85 px-5 backdrop-blur">
+    <div className="print-scroll flex h-full">
+      <div className="print-scroll min-w-0 flex-1 overflow-y-auto">
+        <header className="no-print sticky top-0 z-10 flex h-12 items-center gap-3 border-b border-transparent bg-bg/85 px-5 backdrop-blur">
           <nav className="flex min-w-0 items-center gap-1 text-sm text-fg-muted">
             <Link to={`/s/${node.space_slug}`} className="truncate hover:text-fg">{node.space_name}</Link>
             {path.map((p) => (
@@ -167,6 +199,9 @@ function DocView({ node, onReload }: { node: NodeDetail; onReload: () => Promise
               </div>
             )}
             <SaveIndicator state={saveState} />
+            <button onClick={() => window.print()} className="grid size-8 place-items-center rounded-md text-fg-subtle hover:bg-muted hover:text-fg" title="Imprimir / salvar em PDF">
+              <Printer className="size-4" />
+            </button>
             <StatusBadge status={node.status} />
             <button
               onClick={() => (panelOpen && panelTab === 'ai' ? togglePanel() : openPanel('ai'))}
@@ -187,11 +222,14 @@ function DocView({ node, onReload }: { node: NodeDetail; onReload: () => Promise
           </div>
         )}
         {/* O editor continua montado (só escondido) para não perder edições em andamento. */}
-        <article className={cn('mx-auto max-w-3xl px-6 pb-24 pt-10 lg:px-10', view === 'original' && original && 'hidden')}>
+        <article
+          className={cn('mx-auto px-6 pb-24 pt-10 lg:px-10', layoutWidth(design?.layout), view === 'original' && original && 'hidden', design && `doc-design layout-${design.layout}`)}
+          style={design ? designStyle(design) : undefined}
+        >
           {openProposals.length > 0 && (
             <button
               onClick={() => setProposalId(openProposals[0].id)}
-              className="mb-4 flex w-full items-center gap-2 rounded-lg border border-accent/40 bg-accent-soft px-3 py-2 text-left text-sm"
+              className="no-print mb-4 flex w-full items-center gap-2 rounded-lg border border-accent/40 bg-accent-soft px-3 py-2 text-left text-sm"
             >
               <GitPullRequestArrow className="size-4 shrink-0 text-accent" />
               <span className="flex-1">
@@ -202,11 +240,14 @@ function DocView({ node, onReload }: { node: NodeDetail; onReload: () => Promise
             </button>
           )}
           {overdue && (
-            <div className="mb-6 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+            <div className="no-print mb-6 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
               <AlertTriangle className="size-4 shrink-0" />
               A revisão deste documento venceu. Confira se o conteúdo ainda está correto.
             </div>
           )}
+          <div className={cn(design && 'doc-design-paper overflow-hidden')}>
+          {design && <DesignHeader design={design} />}
+          <div className={cn(design && 'px-6 pb-10 pt-8 sm:px-12')}>
           <TitleInput
             value={title}
             readOnly={!canEdit}
@@ -215,14 +256,21 @@ function DocView({ node, onReload }: { node: NodeDetail; onReload: () => Promise
               schedule({ title: v });
             }}
           />
-          <p className="mb-8 mt-2 text-xs text-fg-subtle">
+          <p className="doc-design-meta mb-8 mt-2 text-xs text-fg-subtle">
             {node.updated_by_name ? `Editado por ${node.updated_by_name} ` : 'Editado '}
             {timeAgo(node.updated_at)} · versão {node.version}
           </p>
           <Editor content={node.content} editable={canEdit} onChange={(content) => schedule({ content })} />
+          </div>
+          {design?.footer_text && (
+            <footer className="border-t px-6 py-4 text-xs sm:px-12" style={{ borderColor: 'color-mix(in srgb, var(--d-primary) 25%, transparent)', color: 'var(--d-muted)' }}>
+              {design.footer_text}
+            </footer>
+          )}
+          </div>
 
           {children.length > 0 && (
-            <section className="mt-12 border-t border-border pt-6">
+            <section className="no-print mt-12 border-t border-border pt-6">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Subpáginas</h2>
               <div className="grid gap-2 sm:grid-cols-2">
                 {children.map((c) => (
@@ -279,7 +327,7 @@ function TitleInput({ value, onChange, readOnly }: { value: string; onChange: (v
           (document.querySelector('.arkivo-editor .ProseMirror') as HTMLElement | null)?.focus();
         }
       }}
-      className="w-full resize-none overflow-hidden bg-transparent text-4xl font-bold leading-tight tracking-tight outline-none placeholder:text-fg-subtle/60"
+      className="doc-title w-full resize-none overflow-hidden bg-transparent text-4xl font-bold leading-tight tracking-tight outline-none placeholder:text-fg-subtle/60"
     />
   );
 }
@@ -299,4 +347,67 @@ function SaveIndicator({ state }: { state: SaveState }) {
       {s.text}
     </span>
   );
+}
+
+/** Faixa do design: logo + texto de cabeçalho; no layout "relatório", uma capa com a cor principal. */
+function DesignHeader({ design }: { design: Design }) {
+  const logo = fileUrl(design.logo_file_id);
+  const cover = fileUrl(design.cover_file_id);
+  if (design.layout === 'report') {
+    return (
+      <div className="relative text-white" style={{ background: 'var(--d-primary)' }}>
+        {cover && <img src={cover} alt="" className="absolute inset-0 size-full object-cover opacity-35" />}
+        {/* O título editável fica logo abaixo; a capa mostra só a identidade visual. */}
+        <div className="relative flex min-h-28 items-start justify-between gap-4 px-6 py-6 text-xs uppercase tracking-wider sm:px-12">
+          {logo ? <img src={logo} alt="" className="h-10 max-w-48 object-contain" /> : <span />}
+          {design.header_text && <span className="opacity-90">{design.header_text}</span>}
+        </div>
+        <div className="h-1.5" style={{ background: 'var(--d-accent)' }} />
+      </div>
+    );
+  }
+  if (!logo && !design.header_text && !cover) return <div className="h-1.5" style={{ background: 'var(--d-primary)' }} />;
+  return (
+    <>
+      {cover && <img src={cover} alt="" className="h-40 w-full object-cover" />}
+      <div className="flex items-center justify-between gap-4 border-b-4 px-6 py-4 sm:px-12" style={{ borderColor: 'var(--d-primary)' }}>
+        {logo ? <img src={logo} alt="" className="h-9 max-w-44 object-contain" /> : <span />}
+        {design.header_text && (
+          <span className="text-right text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--d-muted)' }}>
+            {design.header_text}
+          </span>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Encontra no editor o bloco que contém o trecho citado, rola até ele e destaca. */
+function flashSnippet(snippet: string): boolean {
+  const norm = (t: string) =>
+    t
+      .replace(/[*_`#>|[\]()~=]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  const words = norm(snippet).split(' ').filter(Boolean);
+  const root = document.querySelector('.arkivo-editor .ProseMirror') ?? document.querySelector('.ProseMirror');
+  if (!root || words.length < 2) return false;
+  const blocks = [...root.querySelectorAll('p, li, td, th, h1, h2, h3, h4, pre, blockquote')];
+  const texts = blocks.map((b) => norm(b.textContent ?? ''));
+  for (const size of [6, 4, 3]) {
+    for (let start = 0; start + size <= words.length; start += 2) {
+      const probe = words.slice(start, start + size).join(' ');
+      if (probe.length < 10) continue;
+      const i = texts.findIndex((t) => t.includes(probe));
+      if (i >= 0) {
+        const el = blocks[i] as HTMLElement;
+        el.scrollIntoView({ block: 'center' });
+        el.classList.add('cite-flash');
+        setTimeout(() => el.classList.remove('cite-flash'), 2600);
+        return true;
+      }
+    }
+  }
+  return false;
 }

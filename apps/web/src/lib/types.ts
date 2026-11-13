@@ -1,6 +1,8 @@
 export type UserRole = 'admin' | 'editor' | 'viewer';
 export type NodeType = 'page' | 'process' | 'diagram' | 'board' | 'sql' | 'data_table';
 export type NodeStatus = 'draft' | 'in_review' | 'published' | 'outdated';
+/** auto = entra na busca; always = fonte de referência (prioridade); never = a IA ignora. */
+export type AiUsage = 'auto' | 'always' | 'never';
 
 export interface Me {
   id: string;
@@ -40,6 +42,7 @@ export interface TreeItem {
   icon: string | null;
   position: number;
   status: NodeStatus;
+  ai_usage: AiUsage;
 }
 
 export interface TreeNode extends TreeItem {
@@ -76,6 +79,9 @@ export interface NodeDetail {
   version: number;
   open_proposals: number;
   files: FileRow[];
+  ai_usage: AiUsage;
+  design_id: string | null;
+  derived_from: { id: string; title: string; space_slug: string; source_version: number; current_version: number }[];
 }
 
 export interface VersionRow {
@@ -147,12 +153,91 @@ export interface OpenProposal {
   space_name: string;
 }
 
+/** Fonte numerada de uma resposta/geração da IA. */
 export interface ChatSource {
-  id: string;
+  n: number;
+  nodeId: string;
   title: string;
-  space_slug: string;
-  space_name: string;
+  spaceSlug: string;
+  spaceName: string;
+  heading: string | null;
+  excerpt: string;
+  version: number;
+  status: NodeStatus;
+  aiUsage: AiUsage;
+  kind: 'doc' | 'chunk';
 }
+
+export interface Scope {
+  spaces: Record<string, boolean>;
+  nodes: Record<string, boolean>;
+}
+
+export type StudioKind = 'summary' | 'briefing' | 'faq' | 'study_guide' | 'timeline' | 'mindmap' | 'report' | 'new_doc';
+
+export interface StudioResult {
+  id: string;
+  kind: StudioKind;
+  label: string;
+  title: string;
+  markdown: string;
+  sources: ChatSource[];
+  createdAt: string;
+  designId?: string | null;
+}
+
+export interface AuditFinding {
+  id: string;
+  type: 'contradiction' | 'source_changed' | 'review_overdue' | 'stale' | 'marked_outdated';
+  severity: 'high' | 'medium' | 'low';
+  nodeId: string;
+  title: string;
+  spaceSlug: string;
+  detail: string;
+  suggestion?: string;
+  related?: { nodeId: string; title: string; spaceSlug: string };
+}
+
+export interface AuditResult {
+  findings: AuditFinding[];
+  checkedDocs: number;
+  deep: boolean;
+  scopeDocs: number;
+}
+
+export type DesignFont = 'sans' | 'serif' | 'mono' | 'humanist' | 'geometric' | 'slab';
+export type DesignLayout = 'standard' | 'report' | 'compact' | 'wide' | 'letter';
+export interface DesignPalette {
+  primary: string;
+  accent: string;
+  text: string;
+  background: string;
+  heading: string;
+  muted: string;
+}
+export interface Design {
+  id: string;
+  name: string;
+  description: string | null;
+  palette: DesignPalette;
+  font_heading: DesignFont;
+  font_body: DesignFont;
+  layout: DesignLayout;
+  header_text: string | null;
+  footer_text: string | null;
+  logo_file_id: string | null;
+  cover_file_id: string | null;
+  guidelines: string | null;
+  usage?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export const AI_USAGE_LABEL: Record<AiUsage, string> = {
+  auto: 'Automático',
+  always: 'Fonte de referência',
+  never: 'Nunca usar na IA',
+};
 
 export const STATUS_LABEL: Record<NodeStatus, string> = {
   draft: 'Rascunho',

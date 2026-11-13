@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react-router';
 import * as DM from '@radix-ui/react-dropdown-menu';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, ClipboardCheck, FileUp, Home, LogOut, Moon, Plus, Search, Settings, Sparkles, Sun, UserCircle } from 'lucide-react';
+import { ChevronRight, ClipboardCheck, FileUp, Home, ListChecks, LogOut, Moon, Palette, Plus, Search, Settings, Sparkles, Sun, UserCircle, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useCreateNode, useOpenProposals, useSpaces } from '@/lib/hooks';
 import { useTheme } from '@/lib/theme';
@@ -12,6 +12,8 @@ import { Kbd, Logo } from './ui';
 import { PageTree } from './PageTree';
 import { CommandPalette } from './CommandPalette';
 import { NewSpaceDialog } from './NewSpaceDialog';
+import { SourceCheckbox } from './SourceCheckbox';
+import { docsLabel, hasSelection, isSpaceIncluded, isSpacePartial, scopeActions, useScopeState, useScopeSummary } from '@/lib/scope';
 
 export interface LayoutContext {
   me: Me;
@@ -37,9 +39,9 @@ export function AppLayout({ me }: { me: Me }) {
   }, []);
 
   return (
-    <div className="flex h-full">
+    <div className="print-scroll flex h-full">
       <Sidebar me={me} canEdit={canEdit} onSearch={() => setPaletteOpen(true)} onNewSpace={() => setNewSpaceOpen(true)} />
-      <main className="min-w-0 flex-1 overflow-y-auto">
+      <main className="print-scroll min-w-0 flex-1 overflow-y-auto">
         <Outlet context={{ me, canEdit, openNewSpace: () => setNewSpaceOpen(true) } satisfies LayoutContext} />
       </main>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} isAdmin={me.role === 'admin'} onNewSpace={() => setNewSpaceOpen(true)} />
@@ -67,6 +69,7 @@ function Sidebar({ me, canEdit, onSearch, onNewSpace }: { me: Me; canEdit: boole
   const { theme, toggle } = useTheme();
   const nav = useNavigate();
   const qc = useQueryClient();
+  const scope = useScopeState();
 
   async function logout() {
     await api.post('/auth/logout');
@@ -75,7 +78,7 @@ function Sidebar({ me, canEdit, onSearch, onNewSpace }: { me: Me; canEdit: boole
   }
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-surface">
+    <aside className="no-print flex w-64 shrink-0 flex-col border-r border-border bg-surface">
       <div className="flex h-12 items-center gap-2.5 px-3">
         <Logo className="size-6" />
         <span className="truncate text-sm font-semibold">{me.workspaceName}</span>
@@ -93,19 +96,31 @@ function Sidebar({ me, canEdit, onSearch, onNewSpace }: { me: Me; canEdit: boole
           </span>
         </button>
         <NavItem to="/" end icon={Home} label="Início" />
-        {me.features.ai && <NavItem to="/assistant" icon={Sparkles} label="Assistente IA" />}
+        {me.features.ai && <NavItem to="/assistant" icon={Sparkles} label="Notebook IA" />}
         <NavItem to="/reviews" icon={ClipboardCheck} label="Revisões" badge={proposals.length} />
         {canEdit && <NavItem to="/import" icon={FileUp} label="Importar" />}
+        <NavItem to="/designs" icon={Palette} label="Designs" />
       </div>
 
       <div className="mt-5 flex items-center justify-between px-4 pb-1">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Espaços</span>
+        <span className="ml-auto" />
+        {me.features.ai && (
+          <button
+            onClick={() => scopeActions.togglePicking()}
+            className={cn('mr-1 grid size-5 place-items-center rounded text-fg-subtle hover:bg-muted hover:text-fg', scope.picking && 'bg-accent-soft text-accent')}
+            title="Escolher as fontes da IA"
+          >
+            <ListChecks className="size-3.5" />
+          </button>
+        )}
         {me.role === 'admin' && (
           <button onClick={onNewSpace} className="grid size-5 place-items-center rounded text-fg-subtle hover:bg-muted hover:text-fg" title="Novo espaço">
             <Plus className="size-3.5" />
           </button>
         )}
       </div>
+      {me.features.ai && scope.picking && <SourcesBar spaceIds={spaces.map((s) => s.id)} />}
       <nav className="flex-1 overflow-y-auto px-2 pb-4">
         {spaces.map((s) => (
           <SpaceSection key={s.id} space={s} canEdit={canEdit} />
@@ -151,7 +166,38 @@ function Sidebar({ me, canEdit, onSearch, onNewSpace }: { me: Me; canEdit: boole
   );
 }
 
+/** Barra mostrada enquanto se escolhe as fontes na árvore (como o painel "Fontes" do NotebookLM). */
+function SourcesBar({ spaceIds }: { spaceIds: string[] }) {
+  const scope = useScopeState();
+  const { data } = useScopeSummary();
+  return (
+    <div className="mx-2 mb-1 rounded-lg border border-accent/30 bg-accent-soft/60 px-2.5 py-2 text-xs">
+      <div className="flex items-center gap-1.5 font-medium text-accent">
+        <Sparkles className="size-3.5" /> Fontes da IA
+        <button onClick={() => scopeActions.setPicking(false)} className="ml-auto grid size-5 place-items-center rounded text-fg-subtle hover:bg-bg hover:text-fg" title="Fechar">
+          <X className="size-3" />
+        </button>
+      </div>
+      <div className="mt-0.5 text-fg-muted">
+        {data ? (
+          <>
+            {hasSelection(scope) ? `${data.included} de ${docsLabel(data.total - data.blocked)}` : `Todas as fontes (${docsLabel(data.total - data.blocked)})`}
+            {data.blocked > 0 && <span className="text-fg-subtle"> · {data.blocked} bloqueado(s)</span>}
+          </>
+        ) : (
+          'Carregando…'
+        )}
+      </div>
+      <div className="mt-1.5 flex gap-1">
+        <button onClick={() => scopeActions.all()} className="rounded-md bg-bg px-2 py-0.5 text-fg-muted hover:text-fg">Todas</button>
+        <button onClick={() => scopeActions.none(spaceIds)} className="rounded-md bg-bg px-2 py-0.5 text-fg-muted hover:text-fg">Nenhuma</button>
+      </div>
+    </div>
+  );
+}
+
 function SpaceSection({ space, canEdit }: { space: Space; canEdit: boolean }) {
+  const scope = useScopeState();
   const { slug } = useParams();
   const nav = useNavigate();
   const create = useCreateNode();
@@ -182,6 +228,16 @@ function SpaceSection({ space, canEdit }: { space: Space; canEdit: boolean }) {
   return (
     <div className="mb-1">
       <div className={cn('group flex h-8 items-center rounded-md pr-1', active && 'bg-muted/60')}>
+        {scope.picking && (
+          <span className="ml-1 grid size-5 shrink-0 place-items-center">
+            <SourceCheckbox
+              checked={isSpaceIncluded(scope, space.id)}
+              partial={isSpacePartial(scope, space.id)}
+              onChange={() => scopeActions.toggleSpace(space.id)}
+              title="Usar este espaço como fonte da IA"
+            />
+          </span>
+        )}
         <button onClick={() => setOpen(!open)} className="grid size-6 shrink-0 place-items-center text-fg-subtle" aria-label={open ? 'Recolher espaço' : 'Expandir espaço'}>
           <ChevronRight className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
         </button>
